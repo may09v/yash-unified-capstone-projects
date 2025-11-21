@@ -1,0 +1,20 @@
+model:
+  name: "gpt-4"
+  temperature: 0.7
+  max_tokens: 1000
+
+teams:
+  - name: "Network Infrastructure Team"
+    specialization: ["network", "connectivity", "vpn", "firewall", "router", "switch"]
+  
+  - name: "Software & Applications Team"
+    specialization: ["software", "application", "install", "update", "license", "bug"]
+  
+  - name: "Hardware Support Team"
+    specialization: ["hardware", "laptop", "desktop", "printer", "monitor", "keyboard", "mouse"]
+  
+  - name: "Security & Access Team"
+    specialization: ["security", "password", "access", "permission", "account", "login"]
+  
+  - name: "Database & Systems Team"
+    specialization: ["database", "server", "backup", "storage", "performance"]

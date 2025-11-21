@@ -34,10 +34,6 @@ ENV/
 *~
 .DS_Store
 
-# Environment variables (IMPORTANT: Never commit credentials!)
-.env
-config/.env
-*.env
 
 # Logs
 logs/

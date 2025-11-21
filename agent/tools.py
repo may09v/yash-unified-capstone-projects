@@ -1,6 +1,6 @@
 """
 Database Utility Functions for Corporate Travel Management System
-PostgreSQL NeonDB Version with Pydantic Models and LangChain Tools
+PostgreSQL SupabaseDB Version with Pydantic Models and LangChain Tools
 Uses schemas.py for type validation
 """
 
@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 # Ensure values from .env land in os.environ for downstream libraries
 load_dotenv()
 import os
-# PostgreSQL NeonDB Connection
+# PostgreSQL SupaBase Connection
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 

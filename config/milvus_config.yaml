@@ -1,0 +1,58 @@
+connection:
+  host: "${MILVUS_HOST}"
+  port: "${MILVUS_PORT}"
+  database: "${MILVUS_DATABASE}"
+  uri: "${MILVUS_URI}"
+  token: "${MILVUS_TOKEN}"
+  timeout: 120
+ 
+collections:
+  visa_kb:
+    name: "visa_kb"
+    description: "Visa requirements and information"
+    dimension: 1536
+    index_type: "AUTOINDEX"
+    metric_type: "L2"
+    nlist: 128
+ 
+search_params:
+  top_k: 5
+  nprobe: 10
+
+
+# collections:
+#   visa_requirements:
+#     name: "visa_requirements"
+#     description: "Visa requirements by country and visa type"
+#     dimension: 384
+#     index_type: "IVF_FLAT"
+#     metric_type: "L2"
+#     nlist: 128
+    
+#   embassy_info:
+#     name: "embassy_information"
+#     description: "Embassy contacts and processing information"
+#     dimension: 384
+#     index_type: "IVF_FLAT"
+#     metric_type: "L2"
+#     nlist: 128
+    
+#   regulations:
+#     name: "immigration_regulations"
+#     description: "Immigration regulations and updates"
+#     dimension: 384
+#     index_type: "IVF_FLAT"
+#     metric_type: "L2"
+#     nlist: 128
+    
+#   templates:
+#     name: "document_templates"
+#     description: "Letter templates and forms"
+#     dimension: 384
+#     index_type: "IVF_FLAT"
+#     metric_type: "L2"
+#     nlist: 128
+
+# search_params:
+#   top_k: 5
+#   nprobe: 10

@@ -42,12 +42,7 @@ class TicketRequest(BaseModel):
     session_id: Optional[str] = None
 
 class TicketResponse(BaseModel):
-    ticket_id: Optional[str] = None
-    session_id: str
-    status: str
-    message: str
-    ticket_data: Optional[dict] = None
-    detected_action: str
+    result: str
 
 class TicketDetail(BaseModel):
     ticket_id: str
@@ -102,14 +97,20 @@ async def manage_ticket(request: TicketRequest):
             }
             conversation_history[session_id]["ticket_id"] = ticket_id
             
-            return TicketResponse(
-                ticket_id=ticket_id,
-                session_id=session_id,
-                status="pending_confirmation",
-                message="Ticket created. Please review and confirm the details.",
-                ticket_data=pending_tickets[ticket_id],
-                detected_action=action
-            )
+            ticket_summary = f"""Ticket created successfully. Please review the details:
+
+Ticket ID: {ticket_id}
+Title: {pending_tickets[ticket_id].get('title', 'N/A')}
+Description: {pending_tickets[ticket_id].get('description', 'N/A')}
+Category: {pending_tickets[ticket_id].get('category', 'N/A')}
+Priority: {pending_tickets[ticket_id].get('priority', 'N/A')}
+Assigned Team: {pending_tickets[ticket_id].get('assigned_team', 'N/A')}
+Suggested Solution: {pending_tickets[ticket_id].get('suggested_solution', 'N/A')}
+Status: pending_confirmation
+
+Please confirm to finalize the ticket."""
+            
+            return TicketResponse(result=ticket_summary)
         
         elif action == "confirm":
             if not current_ticket_id or current_ticket_id not in pending_tickets:
@@ -144,14 +145,19 @@ async def manage_ticket(request: TicketRequest):
                     print(f"Failed to save to database: {e}")
             
             db_status = " and saved to database" if db_available else ""
-            return TicketResponse(
-                ticket_id=current_ticket_id,
-                session_id=session_id,
-                status="confirmed",
-                message=f"Ticket confirmed and assigned to {ticket['assigned_team']}{db_status}",
-                ticket_data=ticket,
-                detected_action=action
-            )
+            confirmation_msg = f"""Ticket confirmed successfully{db_status}!
+
+Ticket ID: {current_ticket_id}
+Title: {ticket.get('title', 'N/A')}
+Description: {ticket.get('description', 'N/A')}
+Category: {ticket.get('category', 'N/A')}
+Priority: {ticket.get('priority', 'N/A')}
+Assigned Team: {ticket.get('assigned_team', 'N/A')}
+Status: confirmed
+
+Your ticket has been assigned to {ticket['assigned_team']}."""
+            
+            return TicketResponse(result=confirmation_msg)
         
         elif action == "modify":
             if not current_ticket_id or current_ticket_id not in pending_tickets:
@@ -160,14 +166,20 @@ async def manage_ticket(request: TicketRequest):
             updated_info = ticket_handler.process_ticket(request.user_input)
             pending_tickets[current_ticket_id].update(updated_info)
             
-            return TicketResponse(
-                ticket_id=current_ticket_id,
-                session_id=session_id,
-                status="pending_confirmation",
-                message="Ticket updated. Please review and confirm the changes.",
-                ticket_data=pending_tickets[current_ticket_id],
-                detected_action=action
-            )
+            updated_summary = f"""Ticket updated successfully. Please review the changes:
+
+Ticket ID: {current_ticket_id}
+Title: {pending_tickets[current_ticket_id].get('title', 'N/A')}
+Description: {pending_tickets[current_ticket_id].get('description', 'N/A')}
+Category: {pending_tickets[current_ticket_id].get('category', 'N/A')}
+Priority: {pending_tickets[current_ticket_id].get('priority', 'N/A')}
+Assigned Team: {pending_tickets[current_ticket_id].get('assigned_team', 'N/A')}
+Suggested Solution: {pending_tickets[current_ticket_id].get('suggested_solution', 'N/A')}
+Status: pending_confirmation
+
+Please confirm to finalize the changes."""
+            
+            return TicketResponse(result=updated_summary)
         
         elif action == "cancel":
             if not current_ticket_id or current_ticket_id not in pending_tickets:
@@ -176,14 +188,7 @@ async def manage_ticket(request: TicketRequest):
             del pending_tickets[current_ticket_id]
             conversation_history[session_id]["ticket_id"] = None
             
-            return TicketResponse(
-                ticket_id=current_ticket_id,
-                session_id=session_id,
-                status="cancelled",
-                message="Ticket cancelled successfully",
-                ticket_data=None,
-                detected_action=action
-            )
+            return TicketResponse(result=f"Ticket {current_ticket_id} has been cancelled successfully.")
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

@@ -1,0 +1,9 @@
+*.log
+*.yaml
+*.yml
+.env
+*.json
+venv/
+*.ipynb
+__pycache__/
+*.pyc

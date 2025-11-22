@@ -1,3 +1,7 @@
+# File: /src/rag/config/__init__.py
+# Location: src/rag/config/
+# Description: RAG Config module initialization
+
 """RAG Config module initialization."""
 
 from src.rag.config.rag_config import RAGSettings, get_rag_settings, rag_settings

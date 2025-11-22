@@ -1,3 +1,7 @@
+# File: /main.py
+# Location: Root directory
+# Description: FastAPI entry point exposing the corporate travel role-based agent
+
 """FastAPI entry point exposing the corporate travel role-based agent."""
 
 from __future__ import annotations

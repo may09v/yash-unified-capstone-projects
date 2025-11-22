@@ -1,3 +1,7 @@
+# File: /src/rag/retrieval/policy_qa.py
+# Location: src/rag/retrieval/
+# Description: Policy QA - Question answering using RAG with policy documents
+
 """Policy QA - Question answering using RAG with policy documents."""
 
 from __future__ import annotations

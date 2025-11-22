@@ -1,3 +1,7 @@
+# File: /src/rag/models/rag_models.py
+# Location: src/rag/models/
+# Description: Data models for RAG system
+
 """Data models for RAG system."""
 
 from pydantic import BaseModel, Field

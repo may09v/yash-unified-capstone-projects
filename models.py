@@ -1,3 +1,7 @@
+# File: /models.py
+# Location: Root directory
+# Description: SQLAlchemy database models for the corporate travel management system
+
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Boolean, 
     ForeignKey, Text, Date, Time, Enum as SQLEnum, JSON

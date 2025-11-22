@@ -81,7 +81,7 @@
                     ▼                ▼
         ┌──────────────────┐  ┌───────────────────┐
         │   PostgreSQL     │  │  Milvus Vector DB │
-        │   (SupabaseDB)       │  │  (RAG Index)      │
+        │   (supabasenDB)       │  │  (RAG Index)      │
         │                  │  │                   │
         │ • TRF Data       │  │ • Policy Chunks   │
         │ • Flights/Hotels │  │ • Embeddings      │
@@ -163,7 +163,7 @@ Client Request
 
 ### Data & Database
 - **SQLAlchemy** (v2.0+) - ORM for database operations
-- **PostgreSQL** / **supabsenDB** - Primary relational database
+- **PostgreSQL** / **supabasenDB** - Primary relational database
 - **psycopg2-binary** - PostgreSQL adapter
 - **Milvus** - Vector database for semantic search (RAG)
 - **langchain-milvus** - Milvus integration
@@ -1003,7 +1003,7 @@ psql -U postgres -h localhost
 # Verify DATABASE_URL in .env
 # Format: postgresql://user:password@host:port/database
 
-# If using supabsenDB, ensure connection pooling enabled
+# If using supabasenDB, ensure connection pooling enabled
 # Add: ?sslmode=require
 ```
 

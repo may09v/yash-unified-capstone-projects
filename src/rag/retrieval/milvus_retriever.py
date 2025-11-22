@@ -1,3 +1,7 @@
+# File: /src/rag/retrieval/milvus_retriever.py
+# Location: src/rag/retrieval/
+# Description: Milvus Vector Store - Manages vector database for policy documents
+
 """Milvus Vector Store - Manages vector database for policy documents."""
 
 from __future__ import annotations

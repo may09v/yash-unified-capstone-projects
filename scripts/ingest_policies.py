@@ -1,3 +1,7 @@
+# File: /scripts/ingest_policies.py
+# Location: scripts/
+# Description: Policy Document Ingestion - Load policy documents into Milvus vector store
+
 """Policy Document Ingestion - Load policy documents into Milvus vector store."""
 
 from __future__ import annotations

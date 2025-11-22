@@ -1,3 +1,7 @@
+# File: /src/rag/embeddings/gemini_embedder.py
+# Location: src/rag/embeddings/
+# Description: Gemini Embeddings - Generate embeddings using Google's Gemini model
+
 """Gemini Embeddings - Generate embeddings using Google's Gemini model."""
 
 from __future__ import annotations

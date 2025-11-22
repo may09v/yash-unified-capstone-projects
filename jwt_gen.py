@@ -1,3 +1,7 @@
+# File: /jwt_gen.py
+# Location: Root directory
+# Description: JWT token generation utility for testing and authentication
+
 import jwt
 
 # Secret used by FastAPI app (falls back to same default if env not set)

@@ -1,3 +1,7 @@
+# File: /src/config/settings.py
+# Location: src/config/
+# Description: Application settings loaded from environment variables
+
 """Application settings loaded from environment variables.
 
 This module centralizes configuration for the FastAPI chatbot, LangGraph

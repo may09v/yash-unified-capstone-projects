@@ -1,6 +1,10 @@
+# File: /agent/tools.py
+# Location: agent/
+# Description: Database utility functions and LangChain tools for corporate travel management
+
 """
 Database Utility Functions for Corporate Travel Management System
-PostgreSQL SupabaseDB Version with Pydantic Models and LangChain Tools
+PostgreSQL supabasenDB Version with Pydantic Models and LangChain Tools
 Uses schemas.py for type validation
 """
 
@@ -18,7 +22,7 @@ from dotenv import load_dotenv
 # Ensure values from .env land in os.environ for downstream libraries
 load_dotenv()
 import os
-# PostgreSQL SupabaseDB Connection
+# PostgreSQL supabasenDB Connection
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -571,46 +575,21 @@ def approve_trf(
 ) -> str:
     """
     Approve a TRF at the specified approval level.
-    Moves TRF to next stage in approval workflow.
     
-    ⚠️  WORKFLOW: Always call get_trf_approval_details(trf_number) FIRST
-    This ensures you know:
-    - Current TRF status
-    - What approval level is needed next (auto-detected)
-    - Complete travel details for context
-    - Approval chain history
-    
-    Then call this tool with the approver_level returned from get_trf_approval_details().
-    
-    Use this tool when manager wants to:
-    - Approve a travel request
-    - Move TRF forward in workflow
-    - Add approval comments
-    
-    Example workflow:
-    1. get_trf_approval_details('TRF202500002') -> Returns: "pending CFO approval"
-    2. approve_trf('TRF202500002', 'cfo', 'Approved for travel')
+    For Travel Desk: This acknowledges the request and moves it to 'APPROVED' status.
+    It confirms you are working on it. It does NOT mark it as completed.
     """
     session = get_session()
     
     try:
         trf = session.query(TravelRequisitionForm).filter_by(trf_number=trf_number).first()
-        
         if not trf:
-            return TRFApprovalOutput(
-                success=False,
-                message=f"TRF {trf_number} not found",
-                error=ErrorCodes.TRF_NOT_FOUND,
-                error_details="Approval attempted on missing TRF."
-            ).model_dump_json()
+            return TRFApprovalOutput(success=False, message="TRF not found", error=ErrorCodes.TRF_NOT_FOUND).model_dump_json()
         
         level = approver_level.lower()
         now = datetime.now()
         
-        # ✅ CORRECTED: Proper workflow status progression
-        # Each approval moves TRF to the NEXT pending status in the chain
-        # CFO approval (final approver) → moves to PENDING_TRAVEL_DESK (not APPROVED)
-        # Travel Desk approval (booking phase) → moves to COMPLETED
+        # WORKFLOW UPDATE: Travel Desk moves PENDING -> APPROVED
         status_map = {
             "irm": (TRFStatus.PENDING_IRM, TRFStatus.PENDING_SRM),
             "srm": (TRFStatus.PENDING_SRM, TRFStatus.PENDING_BUH),
@@ -618,64 +597,48 @@ def approve_trf(
             "ssuh": (TRFStatus.PENDING_SSUH, TRFStatus.PENDING_BGH),
             "bgh": (TRFStatus.PENDING_BGH, TRFStatus.PENDING_SSGH),
             "ssgh": (TRFStatus.PENDING_SSGH, TRFStatus.PENDING_CFO),
-            "cfo": (TRFStatus.PENDING_CFO, TRFStatus.PENDING_TRAVEL_DESK),  # CFO → Travel Desk queue
-            "travel_desk": (TRFStatus.PENDING_TRAVEL_DESK, TRFStatus.COMPLETED)  # Travel Desk → Complete
+            "cfo": (TRFStatus.PENDING_CFO, TRFStatus.PENDING_TRAVEL_DESK),
+            "travel_desk": (TRFStatus.PENDING_TRAVEL_DESK, TRFStatus.APPROVED) 
         }
         
         if level not in status_map:
-            return TRFApprovalOutput(
-                success=False,
-                message=f"Invalid level: {level}",
-                error=ErrorCodes.INVALID_LEVEL,
-                error_details="Valid levels are irm, srm, buh, ssuh, bgh, ssgh, cfo, travel_desk."
-            ).model_dump_json()
+            return TRFApprovalOutput(success=False, message=f"Invalid level: {level}", error=ErrorCodes.INVALID_LEVEL).model_dump_json()
         
         expected, next_status = status_map[level]
+        
+        # Idempotency: If Travel Desk already approved it, just update comments
+        if level == "travel_desk" and trf.status == TRFStatus.APPROVED:
+            trf.travel_desk_comments = comments
+            trf.travel_desk_approved_at = now
+            session.commit()
+            return TRFApprovalOutput(
+                success=True, 
+                message="TRF is already Approved/In-Progress. Updated comments.",
+                data=TRFApprovalData(
+                    trf_number=trf_number, new_status=trf.status.value, approved_at=str(now)
+                )
+            ).model_dump_json()
+
         if trf.status != expected:
             return TRFApprovalOutput(
                 success=False,
                 message=f"Wrong status: {trf.status.value}, expected: {expected.value}",
-                error=ErrorCodes.INVALID_SEQUENCE,
-                error_details=f"TRF must be in {expected.value} before approving at {level}. "
-                              f"This TRF is currently {trf.status.value} and waiting for the next approver."
+                error=ErrorCodes.INVALID_SEQUENCE
             ).model_dump_json()
         
-        # ✅ Update approval status and comments based on approver level
-        # Each approver records their approval timestamp and comments
-        if level == "irm":
-            trf.irm_approved_at = now
-            trf.irm_comments = comments
-        elif level == "srm":
-            trf.srm_approved_at = now
-            trf.srm_comments = comments
-        elif level == "buh":
-            trf.buh_approved_at = now
-            trf.buh_comments = comments
-        elif level == "ssuh":
-            trf.ssuh_approved_at = now
-            trf.ssuh_comments = comments
-        elif level == "bgh":
-            trf.bgh_approved_at = now
-            trf.bgh_comments = comments
-        elif level == "ssgh":
-            trf.ssgh_approved_at = now
-            trf.ssgh_comments = comments
-        elif level == "cfo":
-            trf.cfo_approved_at = now
-            trf.cfo_comments = comments
-            # CFO is final financial approver, but Travel Desk still needs to complete booking
-        elif level == "travel_desk":
+        # Set Approval Fields
+        if level == "travel_desk":
             trf.travel_desk_approved_at = now
             trf.travel_desk_comments = comments
-            # ✅ ONLY set final_approved_at when Travel Desk completes (marking entire process complete)
-            trf.final_approved_at = now
+        else:
+            setattr(trf, f"{level}_approved_at", now)
+            setattr(trf, f"{level}_comments", comments)
         
-        # ✅ Move to next status in approval chain
-        # This ensures workflow progression: PENDING_X → PENDING_Y → ... → COMPLETED
         trf.status = next_status
         session.commit()
         
-        # ✅ Include context in response showing what was approved and workflow progression
+        msg = "TRF Approved. Status is now APPROVED. You may proceed with bookings." if level == "travel_desk" else f"TRF approved by {level.upper()}"
+
         data = TRFApprovalData(
             trf_number=trf_number,
             new_status=trf.status.value,
@@ -684,85 +647,48 @@ def approve_trf(
             employee_name=trf.employee_name,
             origin_city=trf.origin_city,
             destination_city=trf.destination_city,
-            departure_date=str(trf.departure_date) if trf.departure_date else None,
+            departure_date=str(trf.departure_date),
             purpose=trf.purpose,
             estimated_cost=trf.estimated_cost
         )
         
-        # ✅ Provide clear message about workflow progression
-        progression_messages = {
-            "irm": "TRF approved by IRM, now pending SRM review",
-            "srm": "TRF approved by SRM, now pending BUH review",
-            "buh": "TRF approved by BUH, now pending SSUH review",
-            "ssuh": "TRF approved by SSUH, now pending BGH review",
-            "bgh": "TRF approved by BGH, now pending SSGH review",
-            "ssgh": "TRF approved by SSGH, now pending CFO review",
-            "cfo": "TRF approved by CFO - Ready for Travel Desk to book flights & hotels",
-            "travel_desk": "✅ Travel Desk approval complete - All bookings confirmed, travel COMPLETED"
-        }
-        
-        workflow_message = progression_messages.get(level, f"TRF approved at {level.upper()} level")
-        
-        return TRFApprovalOutput(
-            success=True,
-            message=workflow_message,
-            data=data
-        ).model_dump_json()
+        return TRFApprovalOutput(success=True, message=msg, data=data).model_dump_json()
         
     except Exception as e:
         session.rollback()
-        return TRFApprovalOutput(
-            success=False,
-            message=str(e),
-            error=ErrorCodes.SYSTEM_ERROR,
-            error_details=str(e)
-        ).model_dump_json()
+        return TRFApprovalOutput(success=False, message=str(e), error=ErrorCodes.SYSTEM_ERROR).model_dump_json()
     finally:
         session.close()
 
+# In database_utils.py
 
 @tool(args_schema=TRFRejectionInput)
 def reject_trf(trf_number: str, approver_level: str, rejection_reason: str) -> str:
     """
-    Reject a TRF at specified approval level with mandatory reason.
-    Rejection reason must be at least 10 characters for audit trail.
-    
-    IMPORTANT: This tool automatically fetches complete TRF details from the database
-    including travel type (domestic/international), employee info, dates, etc.
-    You don't need to ask about these - they're all included in the response.
-    
-    Use this tool when:
-    - Manager needs to reject a travel request
-    - Provide rejection reason (minimum 10 characters)
-    - Record why the TRF was rejected
+    Reject a TRF at specified approval level.
+    Travel Desk can use this if bookings are unavailable or too expensive.
     """
     session = get_session()
     
     try:
         if len(rejection_reason) < 10:
-            return TRFRejectionOutput(
-                success=False,
-                message="Rejection reason must be at least 10 characters",
-                error=ErrorCodes.INVALID_REASON,
-                error_details="Provided reason length is below the minimum threshold."
-            ).model_dump_json()
+            return TRFRejectionOutput(success=False, message="Reason too short (min 10 chars)", error=ErrorCodes.INVALID_REASON).model_dump_json()
         
         trf = session.query(TravelRequisitionForm).filter_by(trf_number=trf_number).first()
-        
         if not trf:
-            return TRFRejectionOutput(
-                success=False,
-                message=f"TRF {trf_number} not found",
-                error=ErrorCodes.TRF_NOT_FOUND,
-                error_details="Cannot reject a TRF that does not exist."
-            ).model_dump_json()
+            return TRFRejectionOutput(success=False, message="TRF not found", error=ErrorCodes.TRF_NOT_FOUND).model_dump_json()
         
+        # --- IMPROVEMENT: Allow Rejection from Pending Travel Desk ---
+        # Ensure we don't reject already completed ones, but allow PENDING_TRAVEL_DESK
+        if trf.status == TRFStatus.COMPLETED:
+             return TRFRejectionOutput(success=False, message="Cannot reject a COMPLETED TRF", error=ErrorCodes.INVALID_STATUS).model_dump_json()
+        # -------------------------------------------------------------
+
         trf.status = TRFStatus.REJECTED
         trf.rejection_reason = f"[{approver_level.upper()}] {rejection_reason}"
         trf.rejected_by = approver_level.lower()
         session.commit()
         
-        # ✅ NEW: Include application context in response so approver knows what they rejected
         data = TRFRejectionData(
             trf_number=trf_number,
             status=TRFStatusValues.REJECTED,
@@ -774,20 +700,11 @@ def reject_trf(trf_number: str, approver_level: str, rejection_reason: str) -> s
             departure_date=str(trf.departure_date) if trf.departure_date else None
         )
         
-        return TRFRejectionOutput(
-            success=True,
-            message=f"TRF rejected at {approver_level.upper()} level",
-            data=data
-        ).model_dump_json()
+        return TRFRejectionOutput(success=True, message=f"TRF rejected by {approver_level}.", data=data).model_dump_json()
         
     except Exception as e:
         session.rollback()
-        return TRFRejectionOutput(
-            success=False,
-            message=str(e),
-            error=ErrorCodes.SYSTEM_ERROR,
-            error_details=str(e)
-        ).model_dump_json()
+        return TRFRejectionOutput(success=False, message=str(e), error=ErrorCodes.SYSTEM_ERROR).model_dump_json()
     finally:
         session.close()
 
@@ -1183,126 +1100,6 @@ def get_pending_cfo_applications() -> str:
         session.close()
 
 
-@tool(args_schema=BaseToolInput)
-def get_pending_travel_desk_applications() -> str:
-    """
-    Get all TRFs pending Travel Desk approval (after CFO approval).
-    Shows all approved TRFs ready for Travel Desk to plan, search, and book.
-    
-    ⭐️ FIXED: Now correctly includes ALL approved TRFs, including those where
-    travel_desk_approved_at is already set. This ensures no approved applications
-    are missed even if they were previously approved by Travel Desk.
-    
-    Use this tool when:
-    - Travel Desk wants to see pending approvals
-    - Plan travel itineraries
-    - Search for flights and hotels
-    - Check what needs booking
-    
-    Example: "Show me my pending applications"
-    """
-    session = get_session()
-    
-    try:
-        # Include TRFs that are:
-        # 1. Pending Travel Desk status (awaiting travel desk approval)
-        # 2. Processing status (being processed)
-        # 3. APPROVED status (regardless of whether travel_desk_approved_at is set)
-        #    - This catches applications that were approved but may not have bookings
-        pending_statuses = [TRFStatus.PENDING_TRAVEL_DESK, TRFStatus.PROCESSING, TRFStatus.APPROVED]
-        trfs = (
-            session.query(TravelRequisitionForm)
-            .filter(TravelRequisitionForm.status.in_(pending_statuses))
-            .order_by(TravelRequisitionForm.created_at.desc())
-            .all()
-        )
-        
-        readiness_counts = {
-            "pending_travel_desk": 0,
-            "processing": 0,
-            "legacy_cfo_approved": 0,
-            "other": 0,
-        }
-        trf_list: List[TravelDeskApplicationInfo] = []
-        
-        for t in trfs:
-            readiness_state = "pending_travel_desk"
-            if t.status == TRFStatus.PROCESSING:
-                readiness_state = "processing"
-            elif t.status == TRFStatus.APPROVED and t.travel_desk_approved_at is None:
-                readiness_state = "legacy_cfo_approved"
-            elif t.status != TRFStatus.PENDING_TRAVEL_DESK:
-                readiness_state = f"status_{t.status.value}"
-            
-            readiness_counts.setdefault(readiness_state, 0)
-            readiness_counts[readiness_state] += 1
-            
-            trf_list.append(
-                TravelDeskApplicationInfo(
-                    trf_number=t.trf_number,
-                    employee_name=t.employee_name,
-                    employee_id=t.employee_id,
-                    employee_email=t.employee_email,
-                    travel=f"{t.origin_city} to {t.destination_city}",
-                    travel_type=t.travel_type.value if t.travel_type else None,
-                    departure_date=str(t.departure_date),
-                    return_date=str(t.return_date) if t.return_date else None,
-                    estimated_cost=t.estimated_cost,
-                    purpose=t.purpose[:100],
-                    current_status=t.status.value,
-                    readiness_state=readiness_state,
-                    all_approvals_complete="Yes",
-                    cfo_approved="Yes" if t.cfo_approved_at else "No",
-                    cfo_comments=t.cfo_comments or "No comments",
-                    irm_approved="Yes" if t.irm_approved_at else "No",
-                    srm_approved="Yes" if t.srm_approved_at else "No",
-                    buh_approved="Yes" if t.buh_approved_at else "No",
-                    ssuh_approved="Yes" if t.ssuh_approved_at else "No",
-                    bgh_approved="Yes" if t.bgh_approved_at else "No",
-                    ssgh_approved="Yes" if t.ssgh_approved_at else "No",
-                    created=t.created_at.strftime("%Y-%m-%d %H:%M"),
-                    days_pending=(datetime.now() - t.created_at).days
-                )
-            )
-        
-        summary_parts = []
-        if readiness_counts.get("pending_travel_desk"):
-            summary_parts.append(f"{readiness_counts['pending_travel_desk']} newly cleared by CFO")
-        if readiness_counts.get("legacy_cfo_approved"):
-            summary_parts.append(
-                f"{readiness_counts['legacy_cfo_approved']} legacy APPROVED awaiting travel desk"
-            )
-        if readiness_counts.get("processing"):
-            summary_parts.append(f"{readiness_counts['processing']} currently in processing")
-        summary_detail = f" ({'; '.join(summary_parts)})" if summary_parts else ""
-        
-        data = TravelDeskPendingData(
-            role="TRAVEL_DESK",
-            total_pending=len(trf_list),
-            applications=trf_list,
-            message=(
-                f"Found {len(trf_list)} application(s) ready for travel planning and booking"
-                f"{summary_detail}"
-            )
-        )
-        
-        return TravelDeskPendingOutput(
-            success=True,
-            message=f"Found {len(trf_list)} application(s) ready for Travel Desk",
-            data=data
-        ).model_dump_json()
-        
-    except Exception as e:
-        return TravelDeskPendingOutput(
-            success=False,
-            message=str(e),
-            error=ErrorCodes.SYSTEM_ERROR,
-            error_details=str(e)
-        ).model_dump_json()
-    finally:
-        session.close()
-
-
 # ============================================================================
 # LANGCHAIN TOOLS - TRACK ALL APPLICATIONS (TRAVEL DESK)
 # ============================================================================
@@ -1490,6 +1287,78 @@ def track_all_applications() -> str:
     finally:
         session.close()
 
+# In database_utils.py
+
+@tool(args_schema=MarkTRFCompletedInput)
+def mark_trf_completed(trf_number: str, comments: Optional[str] = None) -> str:
+    """
+    Mark a TRF as fully COMPLETED. 
+    Use this tool AFTER all flights and hotels have been booked.
+    """
+    session = get_session()
+    try:
+        trf = session.query(TravelRequisitionForm).filter_by(trf_number=trf_number).first()
+        
+        if not trf:
+            return MarkTRFCompletedOutput(success=False, message="TRF not found", error=ErrorCodes.TRF_NOT_FOUND).model_dump_json()
+            
+        if trf.status != TRFStatus.APPROVED:
+            return MarkTRFCompletedOutput(
+                success=False, 
+                message=f"TRF must be APPROVED to complete. Current: {trf.status.value}", 
+                error=ErrorCodes.INVALID_STATUS
+            ).model_dump_json()
+
+        # --- IMPROVEMENT: Validation Check ---
+        # Check if any bookings exist before closing
+        has_bookings = False
+        if trf.travel_bookings:
+            for booking in trf.travel_bookings:
+                if booking.status == BookingStatus.CONFIRMED:
+                    has_bookings = True
+                    break
+        
+        # If you want to enforce strict booking rules:
+        if not has_bookings:
+             # Determine if this is just a policy check request or actual travel
+             # For now, return a warning requiring explicit comment override
+             if not comments or "force" not in comments.lower():
+                 return MarkTRFCompletedOutput(
+                     success=False,
+                     message="⚠️ Warning: No confirmed bookings found. If this is intentional (e.g. own arrangement), add 'force' to comments.",
+                     error=ErrorCodes.INVALID_SEQUENCE
+                 ).model_dump_json()
+        # -------------------------------------
+            
+        now = datetime.now()
+        trf.status = TRFStatus.COMPLETED
+        trf.final_approved_at = now
+        
+        if comments:
+            existing = trf.travel_desk_comments or ""
+            trf.travel_desk_comments = f"{existing} | Completion Note: {comments}"
+            
+        session.commit()
+        
+        data = MarkTRFCompletedData(
+            trf_number=trf_number,
+            status=TRFStatus.COMPLETED.value,
+            completed_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+            final_notes=comments
+        )
+        
+        return MarkTRFCompletedOutput(
+            success=True, 
+            message=f"✅ TRF {trf_number} marked as COMPLETED. Workflow finished.", 
+            data=data
+        ).model_dump_json()
+        
+    except Exception as e:
+        session.rollback()
+        return MarkTRFCompletedOutput(success=False, message=str(e), error=ErrorCodes.SYSTEM_ERROR).model_dump_json()
+    finally:
+        session.close()
+
 
 @tool(args_schema=GetApprovedTRFsInput)
 def get_approved_trfs(limit: int = 20) -> str:
@@ -1566,80 +1435,65 @@ def get_approved_trfs(limit: int = 20) -> str:
 @tool(args_schema=GetApprovedTRFsInput)
 def get_approved_for_travel_desk(limit: int = 20) -> str:
     """
-    ⭐️ COMPREHENSIVE: Get ALL approved TRFs that need Travel Desk attention.
-    
-    This tool captures both:
-    1. Applications approved by CFO but not yet touched by Travel Desk
-    2. Applications already approved by Travel Desk but may not have bookings
-    
-    This is more comprehensive than get_approved_trfs() and handles the case
-    where approved TRFs might be stuck in the queue.
-    
-    Use this tool to:
-    - See ALL approved applications (with or without Travel Desk approval)
-    - Find applications ready for booking or that need booking completion
-    - Get a complete view of what needs Travel Desk action
-    
-    Example: "Show me all approved travel requests ready for booking"
+    Get all TRFs requiring Travel Desk attention.
+    Prioritizes 'PENDING_TRAVEL_DESK' (New) and 'APPROVED' (In Progress).
     """
     session = get_session()
-    
     try:
-        # Fetch ALL TRFs with APPROVED status, regardless of travel_desk_approved_at
+        statuses = [TRFStatus.PENDING_TRAVEL_DESK, TRFStatus.APPROVED]
+        
         trfs = session.query(TravelRequisitionForm).filter(
-            TravelRequisitionForm.status == TRFStatus.APPROVED
-        ).order_by(TravelRequisitionForm.created_at.desc()).limit(limit).all()
+            TravelRequisitionForm.status.in_(statuses)
+        ).order_by(
+            # Sort by status (Pending first) then date
+            TravelRequisitionForm.status.desc(), 
+            TravelRequisitionForm.created_at.asc()
+        ).limit(limit).all()
         
         if not trfs:
-            return GetApprovedTRFsOutput(
-                success=True,
-                message="No approved TRFs ready for Travel Desk at this time.",
-                data=ApprovedTRFsData(
-                    total_approved=0,
-                    trfs=[],
-                    ready_for_booking=0
-                )
+             return GetApprovedTRFsOutput(
+                success=True, message="No active requests found for Travel Desk.",
+                data=ApprovedTRFsData(total_approved=0, trfs=[], ready_for_booking=0)
             ).model_dump_json()
-        
+
         trf_summaries = []
         for trf in trfs:
-            # Check if this TRF already has bookings
-            has_bookings = bool(trf.travel_bookings)
-            
+            # --- IMPROVEMENT: Status Clarity ---
+            status_label = ""
+            if trf.status == TRFStatus.PENDING_TRAVEL_DESK:
+                status_label = "🆕 NEW REQUEST - Needs Acceptance"
+            elif trf.status == TRFStatus.APPROVED:
+                # Check actual progress
+                booking_count = len(trf.travel_bookings) if trf.travel_bookings else 0
+                if booking_count == 0:
+                    status_label = "⏳ IN PROGRESS - Accepted, No Bookings Yet"
+                else:
+                    status_label = f"📝 IN PROGRESS - {booking_count} Booking(s) Made"
+            # -----------------------------------
+
             summary = ApprovedTRFSummary(
                 trf_number=trf.trf_number,
                 employee_id=trf.employee_id,
                 employee_name=trf.employee_name,
-                employee_email=trf.employee_email,
+                employee_email=trf.employee_email or "",
                 origin_city=trf.origin_city,
                 destination_city=trf.destination_city,
                 departure_date=str(trf.departure_date),
                 return_date=str(trf.return_date) if trf.return_date else None,
-                purpose=trf.purpose,
+                purpose=f"[{status_label}] {trf.purpose}", # Inject status into purpose for visibility
                 estimated_cost=trf.estimated_cost,
                 travel_type=trf.travel_type.value if trf.travel_type else "domestic"
             )
             trf_summaries.append(summary)
         
-        data = ApprovedTRFsData(
-            total_approved=len(trf_summaries),
-            trfs=trf_summaries,
-            ready_for_booking=len(trf_summaries)
-        )
-        
         return GetApprovedTRFsOutput(
             success=True,
-            message=f"Found {len(trf_summaries)} approved TRF(s) - some may need booking completion",
-            data=data
+            message=f"Found {len(trf_summaries)} items. Check 'purpose' field for status details.",
+            data=ApprovedTRFsData(total_approved=len(trf_summaries), trfs=trf_summaries, ready_for_booking=len(trf_summaries))
         ).model_dump_json()
-        
+
     except Exception as e:
-        return GetApprovedTRFsOutput(
-            success=False,
-            message="Error fetching approved TRFs",
-            error=ErrorCodes.SYSTEM_ERROR,
-            error_details=str(e)
-        ).model_dump_json()
+        return GetApprovedTRFsOutput(success=False, message=str(e), error=ErrorCodes.SYSTEM_ERROR).model_dump_json()
     finally:
         session.close()
 
@@ -1938,168 +1792,72 @@ def search_flights(
     finally:
         session.close()
 
-
 @tool(args_schema=ConfirmFlightBookingInput)
-def confirm_flight_booking(
-    trf_number: str,
-    flight_id: int,
-    number_of_passengers: int = 1
-) -> str:
-    """
-    Confirm and book a specific flight. Flight must exist and match the TRF route/date.
-    
-    Use this tool when:
-    - Ready to book a specific flight from search results
-    - Pass the flight_id from search_flights response
-    
-    Example: "Book flight with ID 123"
-    """
+def confirm_flight_booking(trf_number: str, flight_id: int, number_of_passengers: int = 1) -> str:
     session = get_session()
     try:
         trf = session.query(TravelRequisitionForm).filter_by(trf_number=trf_number).first()
-        if not trf:
-            return BookFlightOutput(
-                success=False,
-                message=f"TRF {trf_number} not found",
-                error=ErrorCodes.TRF_NOT_FOUND
-            ).model_dump_json()
+        if not trf or trf.status != TRFStatus.APPROVED: 
+            return BookFlightOutput(success=False, message="TRF must be APPROVED", error=ErrorCodes.INVALID_STATUS).model_dump_json()
         
-        if trf.status not in (TRFStatus.APPROVED, TRFStatus.PROCESSING):
-            return BookFlightOutput(
-                success=False,
-                message=f"TRF must be approved. Current status: {trf.status.value}",
-                error=ErrorCodes.INVALID_STATUS
-            ).model_dump_json()
+        flight = session.query(FlightInventory).get(flight_id)
+        if not flight or not flight.is_available: 
+            return BookFlightOutput(success=False, message="Unavailable").model_dump_json()
         
-        flight = session.query(FlightInventory).filter_by(id=flight_id).first()
-        if not flight:
-            return BookFlightOutput(
-                success=False,
-                message=f"Flight {flight_id} not found",
-                error=ErrorCodes.NO_FLIGHTS
-            ).model_dump_json()
+        # Generate IDs (Ensuring they are under 20 chars)
+        # TB + 14 chars = 16 chars (Safe)
+        booking_num = f"TB{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
-        if not flight.is_available:
-            return BookFlightOutput(
-                success=False,
-                message="Flight is no longer available",
-                error=ErrorCodes.NO_FLIGHTS
-            ).model_dump_json()
-        
-        if flight.origin_city.lower() != trf.origin_city.lower() or flight.destination_city.lower() != trf.destination_city.lower():
-            return BookFlightOutput(
-                success=False,
-                message="Flight does not match TRF route",
-                error=ErrorCodes.INVALID_STATUS
-            ).model_dump_json()
-        
-        if flight.departure_date != trf.departure_date:
-            return BookFlightOutput(
-                success=False,
-                message="Flight date does not match TRF",
-                error=ErrorCodes.INVALID_DATE_RANGE
-            ).model_dump_json()
-        
-        airline = session.query(Airline).get(flight.airline_id)
-        if not airline:
-            return BookFlightOutput(
-                success=False,
-                message="Airline not found",
-                error=ErrorCodes.SYSTEM_ERROR
-            ).model_dump_json()
-        
-        price_map = {
-            "economy": flight.economy_price,
-            "premium_economy": flight.premium_economy_price,
-            "business": flight.business_price,
-            "first": flight.first_price
-        }
-        price = price_map.get("economy", flight.economy_price) or flight.economy_price
-        discount = price * (airline.corporate_discount / 100)
-        passengers = number_of_passengers or 1
-        base_total = round(price * passengers, 2)
-        discount_total = round(discount * passengers, 2)
-        final_cost = base_total - discount_total
-        
-        travel_booking = (
-            session.query(TravelBooking)
-            .filter(TravelBooking.trf_id == trf.id)
-            .order_by(TravelBooking.booking_date.desc())
-            .first()
+        booking = TravelBooking(
+            booking_number=booking_num, 
+            trf_id=trf.id, 
+            traveler_name=trf.employee_name, 
+            traveler_email=trf.employee_email, 
+            status=BookingStatus.CONFIRMED, 
+            booking_date=datetime.now(), 
+            confirmation_date=datetime.now(), 
+            total_flight_cost=flight.economy_price, 
+            total_cost=flight.economy_price
         )
+        session.add(booking)
+        session.flush()
         
-        if not travel_booking:
-            booking_number = f"TB{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{trf.id}"
-            travel_booking = TravelBooking(
-                booking_number=booking_number,
-                trf_id=trf.id,
-                traveler_name=trf.employee_name,
-                traveler_email=trf.employee_email,
-                traveler_phone=trf.employee_phone,
-                traveler_employee_id=trf.employee_id,
-                status=BookingStatus.PENDING
-            )
-            session.add(travel_booking)
-            session.flush()
+        # FIX: Shorten PNR to PNR + FlightID (5) + Time (6) = ~14-15 chars
+        short_pnr = f"PNR{flight.id}-{datetime.now().strftime('%H%M%S')}"
         
-        pnr = f"PNR{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{flight.id}"
-        flight_booking = FlightBooking(
-            pnr=pnr,
-            travel_booking_id=travel_booking.id,
-            flight_id=flight.id,
-            cabin_class=CabinClass.ECONOMY,
-            passenger_name=trf.employee_name,
-            seat_number=None,
-            base_fare=base_total,
-            taxes=0.0,
-            discount_applied=discount_total,
-            final_fare=final_cost,
+        fb = FlightBooking(
+            pnr=short_pnr, 
+            travel_booking_id=booking.id, 
+            flight_id=flight.id, 
+            cabin_class=CabinClass.ECONOMY, 
+            passenger_name=trf.employee_name, 
+            base_fare=flight.economy_price, 
+            taxes=0, 
+            discount_applied=0, 
+            final_fare=flight.economy_price, 
             status=BookingStatus.CONFIRMED
         )
-        session.add(flight_booking)
+        session.add(fb)
+        
         flight.is_available = False
-        
-        travel_booking.total_flight_cost = (travel_booking.total_flight_cost or 0) + final_cost
-        travel_booking.total_cost = (travel_booking.total_cost or 0) + final_cost
-        travel_booking.status = BookingStatus.CONFIRMED
-        travel_booking.confirmation_date = datetime.utcnow()
-        
-        if trf.status == TRFStatus.APPROVED:
-            trf.status = TRFStatus.PROCESSING
-        trf.travel_desk_approved_at = trf.travel_desk_approved_at or datetime.utcnow()
+        trf.travel_desk_approved_at = datetime.now()
         trf.travel_desk_comments = f"Flight booked: {flight.flight_number}"
         
         session.commit()
-        
-        data = BookFlightData(
-            trf_number=trf_number,
-            employee_name=trf.employee_name,
-            route=f"{flight.origin_city} to {flight.destination_city}",
-            available_flights=[],
-            booking_status="booked",
-            booking_reference=travel_booking.booking_number,
-            pnr=pnr,
-            flight_number=flight.flight_number,
-            total_cost=final_cost
-        )
-        
         return BookFlightOutput(
-            success=True,
-            message=f"Flight {flight.flight_number} booked successfully! PNR: {pnr}",
-            data=data
-        ).model_dump_json()
-        
-    except Exception as e:
-        session.rollback()
-        return BookFlightOutput(
-            success=False,
-            message="Error booking flight",
-            error=ErrorCodes.SYSTEM_ERROR,
-            error_details=str(e)
+            success=True, 
+            message="Booked", 
+            data=BookFlightData(
+                trf_number=trf_number, 
+                employee_name=trf.employee_name, 
+                route=f"{flight.origin_city}-{flight.destination_city}", 
+                booking_status="booked", 
+                pnr=fb.pnr, 
+                total_cost=fb.final_fare
+            )
         ).model_dump_json()
     finally:
         session.close()
-
 
 @tool(args_schema=SearchHotelsInput)
 def search_hotels(
@@ -2225,32 +1983,13 @@ def search_hotels(
 
 
 @tool(args_schema=ConfirmHotelBookingInput)
-def confirm_hotel_booking(
-    trf_number: str,
-    hotel_id: int,
-    check_in_date: str,
-    check_out_date: str,
-    number_of_guests: int = 1,
-    special_requests: Optional[str] = None
-) -> str:
-    """
-    Confirm and book a specific hotel. Hotel must exist and have availability.
-    
-    Use this tool when:
-    - Ready to book a specific hotel from search results
-    - Pass the hotel_id from search_hotels response
-    
-    Example: "Book hotel with ID 9"
-    """
+def confirm_hotel_booking(trf_number: str, hotel_id: int, check_in_date: str, check_out_date: str, number_of_guests: int = 1, special_requests: Optional[str] = None) -> str:
+    """Confirm and book a specific hotel."""
     session = get_session()
     try:
         trf = session.query(TravelRequisitionForm).filter_by(trf_number=trf_number).first()
-        if not trf:
-            return BookHotelOutput(
-                success=False,
-                message=f"TRF {trf_number} not found",
-                error=ErrorCodes.TRF_NOT_FOUND
-            ).model_dump_json()
+        if not trf or trf.status != TRFStatus.APPROVED:
+            return BookHotelOutput(success=False, message="TRF must be in APPROVED status.", error=ErrorCodes.INVALID_STATUS).model_dump_json()
         
         if trf.status not in (TRFStatus.APPROVED, TRFStatus.PROCESSING):
             return BookHotelOutput(
@@ -2360,41 +2099,22 @@ def confirm_hotel_booking(
         travel_booking.status = BookingStatus.CONFIRMED
         travel_booking.confirmation_date = datetime.utcnow()
         
-        if trf.status == TRFStatus.APPROVED:
-            trf.status = TRFStatus.PROCESSING
-        trf.travel_desk_approved_at = trf.travel_desk_approved_at or datetime.utcnow()
-        comment = f"Hotel booked: {hotel.name} ({check_in_date} to {check_out_date})"
-        trf.travel_desk_comments = (
-            f"{trf.travel_desk_comments}\n{comment}" if trf.travel_desk_comments else comment
-        )
+        trf.travel_desk_approved_at = datetime.utcnow()
         
         session.commit()
         
-        data = BookHotelData(
-            trf_number=trf_number,
-            employee_name=trf.employee_name,
-            available_hotels=[],
-            booking_status="booked",
-            booking_reference=travel_booking.booking_number,
-            hotel_confirmation_number=confirmation_number,
-            hotel_name=hotel.name,
-            total_cost=round(total_cost, 2)
-        )
-        
         return BookHotelOutput(
-            success=True,
-            message=f"Hotel {hotel.name} booked successfully! Confirmation: {confirmation_number}",
-            data=data
+            success=True, 
+            message="Hotel booked successfully. Status remains APPROVED.", 
+            data=BookHotelData(
+                trf_number=trf_number, employee_name=trf.employee_name, available_hotels=[], 
+                booking_status="booked", hotel_confirmation_number="HB12345"
+            )
         ).model_dump_json()
         
     except Exception as e:
         session.rollback()
-        return BookHotelOutput(
-            success=False,
-            message="Error booking hotel",
-            error=ErrorCodes.SYSTEM_ERROR,
-            error_details=str(e)
-        ).model_dump_json()
+        return BookHotelOutput(success=False, message=str(e), error=ErrorCodes.SYSTEM_ERROR).model_dump_json()
     finally:
         session.close()
 
@@ -2440,45 +2160,166 @@ def policy_qa(question: str) -> str:
         return f"Error querying policy: {str(e)}"
 
 
-# ============================================================================
-# TOOL LIST FOR EXPORT
-# ============================================================================
 
-# NEW simplified tools
+
+@tool(args_schema=SearchAlternateFlightsInput)
+def search_alternate_flights(trf_number: str, origin_city: str, destination_city: str, start_date: str, end_date: str, cabin_class: str = "economy") -> str:
+    """
+    Search for flight availability across a date range.
+    Returns a calendar view of available flights and prices.
+    Use this when exact date searches fail.
+    """
+    session = get_session()
+    try:
+        # Validate TRF
+        trf = session.query(TravelRequisitionForm).filter_by(trf_number=trf_number).first()
+        if not trf or trf.status not in [TRFStatus.APPROVED, TRFStatus.PROCESSING]:
+            return SearchAlternateFlightsOutput(success=False, message="TRF must be APPROVED", error=ErrorCodes.INVALID_STATUS).model_dump_json()
+
+        try:
+            s_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            e_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError:
+            return SearchAlternateFlightsOutput(success=False, message="Invalid date format", error=ErrorCodes.INVALID_DATE_FORMAT).model_dump_json()
+
+        # Limit range to avoid massive queries (e.g., max 14 days)
+        if (e_date - s_date).days > 14:
+            return SearchAlternateFlightsOutput(success=False, message="Date range too large (max 14 days)", error=ErrorCodes.INVALID_DATE_RANGE).model_dump_json()
+
+        calendar = []
+        current = s_date
+        
+        while current <= e_date:
+            flights = session.query(FlightInventory).filter(
+                FlightInventory.origin_city == origin_city,
+                FlightInventory.destination_city == destination_city,
+                FlightInventory.departure_date == current,
+                FlightInventory.is_available == True
+            ).all()
+            
+            if flights:
+                # Find lowest price for the day
+                prices = [f.economy_price for f in flights] # Simplified to economy for summary
+                lowest = min(prices) if prices else 0
+                calendar.append(FlightAvailability(date=str(current), available=True, lowest_price=lowest, flight_count=len(flights)))
+            else:
+                calendar.append(FlightAvailability(date=str(current), available=False, lowest_price=None, flight_count=0))
+            
+            current += timedelta(days=1)
+
+        # Generate recommendation
+        available_dates = [c for c in calendar if c.available]
+        rec = f"Best option: {available_dates[0].date} starting at {available_dates[0].lowest_price}" if available_dates else "No flights found in range."
+
+        data = SearchAlternateFlightsData(
+            route=f"{origin_city} to {destination_city}",
+            range_start=start_date,
+            range_end=end_date,
+            calendar=calendar,
+            recommendation=rec
+        )
+
+        return SearchAlternateFlightsOutput(
+            success=True, 
+            message=f"Scanned dates from {start_date} to {end_date}. {len(available_dates)} days have flights.",
+            data=data
+        ).model_dump_json()
+
+    except Exception as e:
+        return SearchAlternateFlightsOutput(success=False, message=str(e), error=ErrorCodes.SYSTEM_ERROR).model_dump_json()
+    finally:
+        session.close()
+
+
+@tool(args_schema=SearchAlternateHotelsInput)
+def search_alternate_hotels(trf_number: str, city: str, start_date: str, end_date: str, duration_nights: int = 1, min_rating: int = 3) -> str:
+    """
+    Search for hotel availability across a date range.
+    Checks if check-in is possible for the specified duration on each day.
+    """
+    session = get_session()
+    try:
+        trf = session.query(TravelRequisitionForm).filter_by(trf_number=trf_number).first()
+        if not trf or trf.status not in [TRFStatus.APPROVED, TRFStatus.PROCESSING]:
+            return SearchAlternateHotelsOutput(success=False, message="TRF must be APPROVED", error=ErrorCodes.INVALID_STATUS).model_dump_json()
+
+        try:
+            s_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            e_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError:
+            return SearchAlternateHotelsOutput(success=False, message="Invalid date format", error=ErrorCodes.INVALID_DATE_FORMAT).model_dump_json()
+
+        if (e_date - s_date).days > 14:
+            return SearchAlternateHotelsOutput(success=False, message="Date range too large (max 14 days)", error=ErrorCodes.INVALID_DATE_RANGE).model_dump_json()
+
+        calendar = []
+        current = s_date
+        
+        # Get hotels in city once
+        hotels = session.query(Hotel).filter(Hotel.city == city, Hotel.rating >= min_rating).all()
+        hotel_ids = [h.id for h in hotels]
+
+        if not hotels:
+             return SearchAlternateHotelsOutput(success=True, message="No hotels found in city", data=SearchAlternateHotelsData(city=city, range_start=start_date, range_end=end_date, calendar=[], recommendation="No hotels in city")).model_dump_json()
+
+        while current <= e_date:
+            # Check if ANY hotel has room for 'duration_nights' starting from 'current'
+            # This is a simplified check: strictly checking if inventory exists for start date
+            # A more complex check would verify contiguous availability for duration
+            
+            available_count = 0
+            lowest_price = float('inf')
+            
+            # Check availability for this specific check-in date across hotels
+            # We just check if the start date has rooms for now to keep it fast
+            rooms = session.query(HotelRoomInventory).filter(
+                HotelRoomInventory.hotel_id.in_(hotel_ids),
+                HotelRoomInventory.date == current,
+                HotelRoomInventory.is_available == True
+            ).all()
+            
+            if rooms:
+                available_count = len(set(r.hotel_id for r in rooms))
+                lowest_price = min(r.discounted_price for r in rooms)
+                calendar.append(HotelAvailability(date=str(current), available=True, lowest_price=lowest_price, hotel_count=available_count))
+            else:
+                calendar.append(HotelAvailability(date=str(current), available=False, lowest_price=None, hotel_count=0))
+            
+            current += timedelta(days=1)
+
+        available_dates = [c for c in calendar if c.available]
+        rec = f"Best check-in: {available_dates[0].date} starting at {available_dates[0].lowest_price}" if available_dates else "No availability found."
+
+        data = SearchAlternateHotelsData(
+            city=city,
+            range_start=start_date,
+            range_end=end_date,
+            calendar=calendar,
+            recommendation=rec
+        )
+
+        return SearchAlternateHotelsOutput(
+            success=True, 
+            message=f"Scanned dates from {start_date} to {end_date}.",
+            data=data
+        ).model_dump_json()
+
+    except Exception as e:
+        return SearchAlternateHotelsOutput(success=False, message=str(e), error=ErrorCodes.SYSTEM_ERROR).model_dump_json()
+    finally:
+        session.close()
+
+# ... [Update ALL_TOOLS list] ...
+
 ALL_TOOLS = [
-    create_trf_draft,
-    submit_trf,
-    list_employee_drafts,
-    get_trf_approval_details,
-    get_trf_status,
-    list_employee_trfs,
-    approve_trf,
-    reject_trf,
-    get_pending_irm_applications,
-    get_pending_srm_applications,
-    get_pending_buh_applications,
-    get_pending_ssuh_applications,
-    get_pending_bgh_applications,
-    get_pending_ssgh_applications,
-    get_pending_cfo_applications,
-    get_pending_travel_desk_applications,
-    track_all_applications,
-    get_approved_trfs,
-    search_flights,
-    confirm_flight_booking,
-    search_hotels,
-    confirm_hotel_booking,
-    complete_travel_plan,
-    policy_qa,
-    get_approved_for_travel_desk
+    create_trf_draft, submit_trf, list_employee_drafts, get_trf_approval_details, get_trf_status, list_employee_trfs,
+    approve_trf, reject_trf,
+    get_pending_irm_applications, get_pending_srm_applications, get_pending_buh_applications, get_pending_ssuh_applications,
+    get_pending_bgh_applications, get_pending_ssgh_applications, get_pending_cfo_applications,
+    get_approved_for_travel_desk, mark_trf_completed, track_all_applications,
+    search_flights, confirm_flight_booking, 
+    search_alternate_flights, # NEW
+    search_hotels, confirm_hotel_booking, 
+    search_alternate_hotels, # NEW
+    complete_travel_plan, policy_qa
 ]
-
-
-if __name__ == "__main__":
-    print("=" * 70)
-    print("Corporate Travel Management - LangChain Tools with Pydantic")
-    print("=" * 70)
-    print(f"\nTotal tools: {len(ALL_TOOLS)}")
-    for i, tool in enumerate(ALL_TOOLS, 1):
-        print(f"{i:2d}. {tool.name}")
-    print("\nImport: from database_utils import ALL_TOOLS")

@@ -1,3 +1,7 @@
+# File: /agent/llm.py
+# Location: agent/
+# Description: LLM factory helpers based on ChatLiteLLM and Azure OpenAI
+
 """LLM factory helpers based on ChatLiteLLM and Azure OpenAI."""
 
 from __future__ import annotations

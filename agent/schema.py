@@ -1,3 +1,7 @@
+# File: /agent/schema.py
+# Location: agent/
+# Description: Pydantic schemas for LangChain tools in Corporate Travel Management system
+
 """Pydantic schemas for LangChain tools in the Corporate Travel Management system.
 
 These schemas describe the input arguments and structured outputs that LangChain
@@ -60,7 +64,6 @@ class TRFStatusValues(str, Enum):
     PENDING_TRAVEL_DESK = TRFStatus.PENDING_TRAVEL_DESK.value
     APPROVED = TRFStatus.APPROVED.value
     REJECTED = TRFStatus.REJECTED.value
-    PROCESSING = TRFStatus.PROCESSING.value
     COMPLETED = TRFStatus.COMPLETED.value
 
 
@@ -772,31 +775,6 @@ class TravelDeskApplicationInfo(BaseModel):
     days_pending: int = Field(..., description="Days since TRF was created.")
 
 
-class TravelDeskPendingData(BaseModel):
-    """Container for Travel Desk pending applications with specialized fields."""
-    
-    model_config = ConfigDict(extra="allow")
-    
-    role: str = Field("TRAVEL_DESK", description="Role - always TRAVEL_DESK.")
-    total_pending: int = Field(..., description="Total count of applications ready for booking.")
-    applications: List[TravelDeskApplicationInfo] = Field(
-        ..., 
-        description="List of applications with all approval details."
-    )
-    message: str = Field(
-        ..., 
-        description="Summary message about ready-to-book applications."
-    )
-
-
-class TravelDeskPendingOutput(BaseToolOutput):
-    """Output for Travel Desk pending applications retrieval."""
-    
-    data: Optional[TravelDeskPendingData] = Field(
-        None,
-        description="Travel Desk pending applications with complete approval chain.",
-    )
-
 
 # ============================================================================
 # TRACK ALL APPLICATIONS SCHEMAS (Travel Desk - All non-draft applications)
@@ -1300,3 +1278,71 @@ class CompleteTravelPlanOutput(BaseToolOutput):
         description="Complete travel booking plan with flights and hotels"
     )
 
+class MarkTRFCompletedInput(BaseToolInput):
+    """Input for marking a TRF as fully completed."""
+    trf_number: str = Field(..., description="The TRF number to mark as completed.")
+    comments: Optional[str] = Field(None, description="Final closing comments regarding the booking.")
+
+class MarkTRFCompletedData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    trf_number: str = Field(..., description="The TRF number marked as completed.")
+    status: str = Field(..., description="Final status (COMPLETED).")
+    completed_at: str = Field(..., description="Timestamp of completion.")
+    final_notes: Optional[str] = Field(None, description="Closing notes.")
+
+class MarkTRFCompletedOutput(BaseToolOutput):
+    data: Optional[MarkTRFCompletedData] = Field(
+        None, description="Details of the completed TRF."
+    )
+
+
+class SearchAlternateFlightsInput(BaseToolInput):
+    """Input for searching flights across a date range."""
+    trf_number: str = Field(..., description="TRF Number")
+    origin_city: str = Field(..., description="Departure City")
+    destination_city: str = Field(..., description="Arrival City")
+    start_date: str = Field(..., description="Start of date range (YYYY-MM-DD)")
+    end_date: str = Field(..., description="End of date range (YYYY-MM-DD)")
+    cabin_class: Optional[str] = Field("economy", description="Cabin class preference")
+
+class FlightAvailability(BaseModel):
+    date: str
+    available: bool
+    lowest_price: Optional[float]
+    flight_count: int
+
+class SearchAlternateFlightsData(BaseModel):
+    route: str
+    range_start: str
+    range_end: str
+    calendar: List[FlightAvailability]
+    recommendation: Optional[str]
+
+class SearchAlternateFlightsOutput(BaseToolOutput):
+    data: Optional[SearchAlternateFlightsData]
+
+
+class SearchAlternateHotelsInput(BaseToolInput):
+    """Input for searching hotels across a date range."""
+    trf_number: str = Field(..., description="TRF Number")
+    city: str = Field(..., description="City to search")
+    start_date: str = Field(..., description="Start of check-in range (YYYY-MM-DD)")
+    end_date: str = Field(..., description="End of check-in range (YYYY-MM-DD)")
+    duration_nights: int = Field(1, description="Length of stay required")
+    min_rating: int = Field(3, description="Minimum star rating")
+
+class HotelAvailability(BaseModel):
+    date: str
+    available: bool
+    lowest_price: Optional[float]
+    hotel_count: int
+
+class SearchAlternateHotelsData(BaseModel):
+    city: str
+    range_start: str
+    range_end: str
+    calendar: List[HotelAvailability]
+    recommendation: Optional[str]
+
+class SearchAlternateHotelsOutput(BaseToolOutput):
+    data: Optional[SearchAlternateHotelsData]

@@ -333,8 +333,7 @@ ROLE_TOOLS_MAP = {
 ```bash
 
 # Run migrations from SQL script
-psql -d travel_desk -f supabase-db-sql-travel-indent.sql
-psql -d travel_desk -f seed_static.sql
+psql -d travel_desk -f sql_script_with_seed.sql
 ```
 
 ---

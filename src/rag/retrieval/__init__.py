@@ -1,3 +1,7 @@
+# File: /src/rag/retrieval/__init__.py
+# Location: src/rag/retrieval/
+# Description: Retrieval module initialization
+
 """Retrieval module initialization."""
 
 from src.rag.retrieval.milvus_retriever import MilvusRetriever, get_retriever

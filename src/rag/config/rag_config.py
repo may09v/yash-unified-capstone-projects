@@ -1,3 +1,7 @@
+# File: /src/rag/config/rag_config.py
+# Location: src/rag/config/
+# Description: RAG Configuration - Centralized settings for RAG system
+
 """RAG Configuration - Centralized settings for RAG system."""
 
 from __future__ import annotations

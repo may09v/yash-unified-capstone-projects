@@ -1,3 +1,7 @@
+# File: /scripts/test_rag.py
+# Location: scripts/
+# Description: Test/Demo script for Policy RAG system
+
 """Test/Demo script for Policy RAG system."""
 
 from src.rag.retrieval.policy_qa import get_policy_qa

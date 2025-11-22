@@ -1,3 +1,7 @@
+# File: /agent/policy_tool.py
+# Location: agent/
+# Description: Policy Retrieval Tool - Integration for travel agent
+
 """Policy Retrieval Tool - Integration for travel agent."""
 
 from __future__ import annotations

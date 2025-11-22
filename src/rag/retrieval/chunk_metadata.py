@@ -1,3 +1,7 @@
+# File: /src/rag/retrieval/chunk_metadata.py
+# Location: src/rag/retrieval/
+# Description: Chunk metadata generation using ChatLiteLLM
+
 """Chunk metadata generation using ChatLiteLLM.
 
 This helper runs a lightweight LLM prompt per chunk to capture

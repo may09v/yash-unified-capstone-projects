@@ -12,12 +12,12 @@ class SearchRequest(BaseModel):
 async def fetch_web_data(urls: List[str], query: str,logging_obj) -> Any:
     duck_obj = DuckDuckGo()
     try:
-        logging_obj.info('stated fetch web data')
+        logging_obj.info('Fetch web data stated')
         results = await duck_obj.fetch_web_data(urls, query)
-        logging_obj.info(f'successful fetch web data  ')
+        logging_obj.info(f'Fetch web data END')
         return results
     except Exception as e:
-        logging_obj.error(f'ouptut of  fetch web data {str(e)} ')
-        raise RuntimeError(f"Failed to fetch web data: {str(e)}")
+        logging_obj.error(f'failed to Fetch web data {str(e)} ')
+        raise RuntimeError(f"Failed to Fetch web data {str(e)}")
     
 

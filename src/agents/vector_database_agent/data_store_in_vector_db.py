@@ -14,16 +14,16 @@ url_config = load_all_urls_config()
 store_vector_db_url =url_config['store_vector_db_url']
 
 
-def call_api(output):
+def call_api(output,header):
     try:
-        response = requests.post(store_vector_db_url, json={'input':output})
+        response = requests.post(store_vector_db_url, json={'input':output},headers=header)
         return response.json()
     except Exception as e:
         return ''
 
 def store_data_in_vcdb(state):
     output=state['output']
-    content = call_api(output)
+    content = call_api(output,{'Authorization':state['API_TOKEN']})
     try:
         state['store_data_in_vcdb'] = content['status']
         if  state['store_data_in_vcdb']== '':

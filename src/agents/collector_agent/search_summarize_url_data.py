@@ -17,7 +17,7 @@ search_duckduck_go_url =url_config['search_duckduck_go_url']
 def search_over_intenet_with_ddg(state):
     try:
         query = state['relevent_query']
-        res=requests.post(search_duckduck_go_url,json={'queries':query})
+        res=requests.post(search_duckduck_go_url,json={'queries':query},headers={'Authorization':state['API_TOKEN']})
         if res.status_code ==200:
             state['search_summarize_data']= res.json()
             out = [i['link'] for i in state['search_summarize_data']]

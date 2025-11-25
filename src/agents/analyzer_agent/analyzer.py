@@ -19,7 +19,7 @@ def analyze_generated_output(state):
         web_data = str(state["data_for_summarize"])
 
         # search_results= state['all_search_summarize_data']
-        res=requests.post(analysis_output_url,json={'query':query,"url_with_summary": rag_data+web_data,"with_summary":False })
+        res=requests.post(analysis_output_url,json={'query':query,"url_with_summary": rag_data+web_data,"with_summary":False },headers={'Authorization':state['API_TOKEN']})
         if res.status_code ==200:
             state['analyser_output']= res.json()
             state["analyser_status"] =True

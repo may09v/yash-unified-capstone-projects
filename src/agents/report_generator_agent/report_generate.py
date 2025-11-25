@@ -19,7 +19,7 @@ def generate_summarize_report(state):
         query = state['query']
         analyse_output= str(state['analyser_output'])
         search_results= str(state['data_for_summarize'])
-        res=requests.post(summarize_output_url,json={'query':query,"search_results": analyse_output+search_results})
+        res=requests.post(summarize_output_url,json={'query':query,"search_results": analyse_output+search_results},headers={'Authorization':state['API_TOKEN']})
         if res.status_code ==200:
             state['output']= res.json()['summary']
             state["summarize_output_status"] =True

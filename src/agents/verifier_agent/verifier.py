@@ -19,7 +19,7 @@ def content_verifier(state):
         query = state['query']
         # search_results= state['data_for_summarize']
         search_data_list = state['all_search_summarize_data']
-        res=requests.post(verifier_output_url,json={'query':query,"url_with_summary": search_data_list})
+        res=requests.post(verifier_output_url,json={'query':query,"url_with_summary": search_data_list},headers={'Authorization':state['API_TOKEN']})
         if res.status_code ==200:
             state['verifier_output_data']= res.json()
             state['all_verify_output']= res.json()

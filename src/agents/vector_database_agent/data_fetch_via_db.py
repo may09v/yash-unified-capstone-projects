@@ -14,9 +14,9 @@ url_config = load_all_urls_config()
 db_data_fetch_url =url_config['search_vector_db_url']
 
 
-def call_api(query):
+def call_api(query,header):
     try:
-        response = requests.post(db_data_fetch_url, json={'query':query})
+        response = requests.post(db_data_fetch_url, json={'query':query},headers=header)
         return response.json()
     except Exception as e:
         return ''
@@ -25,7 +25,7 @@ def db_data_fetch(state):
     sub_queries=list(state['query'])
     sub_queries.extend(state['relevent_query'])
     all_queires = "  ".join(sub_queries)
-    content = call_api(all_queires)
+    content = call_api(all_queires,{'Authorization':state['API_TOKEN']})
     state['relevent_query_rag_data'] = content['data']
     if state['relevent_query_rag_data'] == '':
         state["relevent_query_rag_data_status"] =False

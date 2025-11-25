@@ -14,9 +14,9 @@ url_config = load_all_urls_config()
 web_data_fetch_url =url_config['web_data_fetch_url']
 
 
-def call_api(url, query):
+def call_api(url, query,header):
     try:
-        response = requests.post(web_data_fetch_url, json={'query':query,"url":url})
+        response = requests.post(web_data_fetch_url, json={'query':query,"url":url},headers=header)
         return response.json()
     except Exception as e:
         return {}
@@ -40,6 +40,6 @@ def web_data_fetch(state):
     web_urls=state['web_urls']
     # res=requests.post(web_data_fetch_url,json={'query':query})
     # if res.status_code ==200:
-    state['data_for_summarize']= call_api(web_urls,query)
+    state['data_for_summarize']= call_api(web_urls,query,{'Authorization':state['API_TOKEN']})
     state["web_data_fetch_status"] =True
     return state

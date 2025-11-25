@@ -56,3 +56,4 @@ class State(TypedDict):
     data_for_summarize : Optional[Any]
     web_urls:List[str]= []
     web_data_fetch_status: Literal[True,False] =False 
+    API_TOKEN : str

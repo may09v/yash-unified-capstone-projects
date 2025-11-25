@@ -14,7 +14,7 @@ get_get_relevent_query_url =url_config['get_relevent_query_url']
 
 def get_relevent_query(state):
     query=state['query']
-    res=requests.post(get_get_relevent_query_url,json={'query':query})
+    res=requests.post(get_get_relevent_query_url,json={'query':query},headers={'Authorization':state['API_TOKEN']})
     if res.status_code ==200:
         state['relevent_query']= res.json()['generated_queries']
         state["relevent_query_operation_status"] =True

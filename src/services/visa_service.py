@@ -944,7 +944,28 @@ from datetime import datetime, timedelta, date
 import uuid
 import logging
 from pydantic import ValidationError
+
+def load_config():
+    """Load config from project root config folder"""
+    current_file = os.path.abspath(__file__)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+    config_path = os.path.join(project_root, 'config', 'postgres_connection.yaml')
+   
+    with open(config_path, 'r') as file:
+        config_content = file.read()
+   
+    config_content = os.path.expandvars(config_content)
+    return yaml.safe_load(config_content)
  
+# Load configuration
+config = load_config()
+ 
+DB_HOST = config['connection']['host']
+DB_USER = config['connection']['user']
+DB_PORT = config['connection']['port']
+DB_PASSWORD = config['connection']['password']
+DB_NAME = config['connection']['database']
+
 class VisaService:
     def __init__(self, db_url: str = None):
         """Initialize visa service with PostgreSQL."""
@@ -961,16 +982,29 @@ class VisaService:
             self.config = {}
        
         # PostgreSQL connection
-        self.db_url = db_url or os.getenv("DATABASE_URL",
-            "postgresql://neondb_owner:npg_7qrSTAyjhd5c@ep-divine-flower-a4mpvskl-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require")
+#        self.db_url = db_url or os.getenv("DATABASE_URL",
+            # "postgresql://neondb_owner:npg_7qrSTAyjhd5c@ep-divine-flower-a4mpvskl-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
         # self.db_url = db_url or os.getenv("DATABASE_URL", "postgresql://pgadmin:pgadmin@localhost:5432/visaapp")
-       
+        self.db_url = db_url or self._build_db_url()       
         self._init_database()
         self.logger.info("VisaService initialized with PostgreSQL")
- 
+
+    def _build_db_url(self) -> str:
+        """Build PostgreSQL connection URL from configuration."""
+        encoded_password = DB_PASSWORD.replace('@', '%40')
+        db_url = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+           
+        self.logger.info(f"Built database URL for host: {DB_HOST}")
+        return db_url
+        
     def _get_connection(self):
-        """Get PostgreSQL database connection."""
-        return psycopg2.connect(self.db_url)
+#       Get PostgreSQL database connection.
+        try:
+            conn = psycopg2.connect(self.db_url)
+            return conn
+        except psycopg2.OperationalError as e:
+            self.logger.error(f"Database connection failed: {e}")
+            raise ConnectionError(f"Failed to connect to database: {e}")
  
     def _init_database(self):
         """Initialize PostgreSQL database with required tables."""
